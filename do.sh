@@ -116,7 +116,7 @@ watch () {
 goget () {
   # install all the things
   go get -u -v ./...
-  go mod tidy
+  go mod tidy -e
 }
 
 REDACT=""
