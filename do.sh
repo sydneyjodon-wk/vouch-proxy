@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -e
 
 # change dir to where this script is running
@@ -25,10 +25,29 @@ run () {
 build () {
   local VERSION=$(git describe --always --long)
   local DT=$(date -u +"%Y-%m-%dT%H:%M:%SZ") # ISO-8601
-  local FQDN=$(hostname --fqdn)
+  local FQDN=$(_hostname)
   local SEMVER=$(git tag --list --sort="v:refname" | tail -n -1)
   local BRANCH=$(git rev-parse --abbrev-ref HEAD)
-  go build -i -v -ldflags=" -X main.version=${VERSION} -X main.builddt=${DT} -X main.host=${FQDN} -X main.semver=${SEMVER} -X main.branch=${BRANCH}" .
+  local UNAME=$(uname)
+  go build -i -v -ldflags=" -X main.version=${VERSION} -X main.uname=${UNAME} -X main.builddt=${DT} -X main.host=${FQDN} -X main.semver=${SEMVER} -X main.branch=${BRANCH}" .
+}
+
+_hostname() {
+  local FQDN
+  local HOSTNAME_CMD
+
+  case $(uname) in
+    FreeBSD) HOSTNAME_CMD="hostname";;
+          *) HOSTNAME_CMD="hostname --fqdn"
+  esac
+
+  FQDN=$($HOSTNAME_CMD)
+  if [ -z "$FQDN" ]; then
+    >&2 echo "error: Could determine the fully qualified domain name using command $HOSTNAME_CMD"
+    return 1
+  fi
+  echo $FQDN 
+  return 0;
 }
 
 install () {
@@ -58,11 +77,17 @@ drun () {
     docker stop $NAME
     docker rm $NAME
   fi
+  WITHCERTS=""
+  if [ -d "${SDIR}/certs" ] && [ -z $(find ${SDIR}/certs -type d -empty) ]; then
+    WITHCERTS="-v ${SDIR}/certs:/certs"
+  fi
+
 
   CMD="docker run --rm -i -t 
     -p ${HTTPPORT}:${HTTPPORT} 
     --name $NAME 
     -v ${SDIR}/config:/config 
+    $WITHCERTS
     $IMAGE $* "
 
     echo $CMD
@@ -90,7 +115,8 @@ watch () {
 
 goget () {
   # install all the things
-  go get -t -v ./...
+  go get -u -v ./...
+  go mod tidy
 }
 
 REDACT=""
@@ -159,6 +185,8 @@ test() {
   if [ -z "$VOUCH_CONFIG" ]; then
     export VOUCH_CONFIG="$SDIR/config/testing/test_config.yml"
   fi
+
+  go get -t ./...
   # test all the things
   if [ -n "$*" ]; then
     # go test -v -race $EXTRA_TEST_ARGS $*
@@ -311,7 +339,6 @@ profile() {
   ./vouch-proxy -profile
   go tool pprof -http=0.0.0.0:19091 http://0.0.0.0:9090/debug/pprof/profile?seconds=10
 }
-
 
 gofmt() {
   # segfault's without exec since it would just call this function infinitely :)
