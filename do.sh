@@ -90,8 +90,6 @@ watch () {
 
 goget () {
   # install all the things
-  export GO111MODULE=on
-  go mod init
   go get -t -v ./...
 }
 
